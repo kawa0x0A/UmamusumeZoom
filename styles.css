@@ -345,6 +345,25 @@ button.ghost.danger:hover:not(:disabled) { border-color: var(--ng); color: var(-
   letter-spacing: 0;
   color: var(--fg-dim);
 }
+.card-preview {
+  max-width: var(--stage-w);
+  margin: 0 auto 12px;
+  padding: 0;
+  text-align: center;
+}
+.card-preview img {
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  display: block;
+}
+.card-preview figcaption {
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--fg-dim);
+}
+
 .share-actions {
   display: flex;
   gap: 8px;
