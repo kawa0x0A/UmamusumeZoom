@@ -502,6 +502,7 @@ function finishGame() {
    ========================================================= */
 
 const SHARE_MAX = 40; // 絵文字が長くなりすぎないよう上限を設ける
+const SITE_URL = 'https://kawa0x0a.github.io/UmamusumeZoom/'; // 共有文に載せる公開URL
 
 /** 10個ごとに改行した絵文字の行 */
 function squareRows() {
@@ -666,10 +667,14 @@ function buildCard() {
   return cv;
 }
 
-function shareText() {
+/**
+ * 共有文。X の intent では URL を url パラメータで別に渡すので、
+ * テキスト側に URL を含めるかどうかを切り替えられるようにしている。
+ */
+function shareText(withUrl) {
   const acc = session.total ? Math.round((session.correct / session.total) * 100) : 0;
   const poolName = settings.pool === 'uma' ? 'ウマ娘のみ' : '全キャラ';
-  return [
+  const lines = [
     `ウマ娘 ズームクイズ 🔍`,
     `${DIFFICULTY[settings.difficulty].name} / ${poolName}`,
     `${session.score}点　${session.correct}/${session.total}問正解（${acc}%）`,
@@ -677,7 +682,9 @@ function shareText() {
     ...squareRows(),
     '',
     '#ウマ娘ズームクイズ',
-  ].join('\n');
+  ];
+  if (withUrl) lines.push(SITE_URL);
+  return lines.join('\n');
 }
 
 function toast(msg) {
@@ -732,8 +739,11 @@ async function prepareCard() {
 
 $('btn-share-x').addEventListener('click', () => {
   // 投稿画面を開くだけ。画像を添えるかどうかはプレイヤーが決める。
-  const url = 'https://x.com/intent/post?text=' + encodeURIComponent(shareText());
-  window.open(url, '_blank', 'noopener,noreferrer');
+  // URL は url パラメータで渡す（X 側が本文の末尾にリンクとして付けてくれる）。
+  const intent =
+    'https://x.com/intent/post?text=' + encodeURIComponent(shareText(false)) +
+    '&url=' + encodeURIComponent(SITE_URL);
+  window.open(intent, '_blank', 'noopener,noreferrer');
 });
 
 $('btn-save-image').addEventListener('click', () => {
@@ -745,7 +755,7 @@ $('btn-save-image').addEventListener('click', () => {
 });
 
 $('btn-copy').addEventListener('click', async () => {
-  toast((await copyText(shareText())) ? '結果をコピーしました' : 'コピーできませんでした');
+  toast((await copyText(shareText(true))) ? '結果をコピーしました' : 'コピーできませんでした');
 });
 
 /* =========================================================
