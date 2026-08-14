@@ -427,9 +427,12 @@ function submitAnswer(charOrNull) {
     session.streak = 0;
     session.misses.push({ char: current.char, guess: charOrNull });
   }
-  session.log.push(
-    correct ? (current.zoomOuts || current.hintUsed ? '🟨' : '🟩') : charOrNull ? '🟥' : '⬜'
-  );
+  session.log.push({
+    mark: correct ? (current.zoomOuts || current.hintUsed ? '🟨' : '🟩') : charOrNull ? '🟥' : '⬜',
+    name: current.char.ja,
+    // 結果カード用に出題部分だけを小さく焼いておく（元画像を抱え続けるとメモリを食うため）
+    thumb: session.log.length < CARD_MAX ? makeThumb(current) : null,
+  });
 
   $('answer-area').classList.add('hidden');
   $('result-area').classList.remove('hidden');
@@ -471,6 +474,7 @@ function finishGame() {
   $('share-squares').textContent = squareRows().join('\n');
   $('share-grid').classList.toggle('hidden', session.log.length === 0);
   $('share-squares').style.whiteSpace = 'pre-wrap';
+  prepareCard();
 
   const list = $('miss-list');
   list.innerHTML = '';
@@ -501,11 +505,163 @@ const SHARE_MAX = 40; // 絵文字が長くなりすぎないよう上限を設�
 
 /** 10個ごとに改行した絵文字の行 */
 function squareRows() {
-  const marks = session.log.slice(0, SHARE_MAX);
+  const marks = session.log.slice(0, SHARE_MAX).map((e) => e.mark);
   const rows = [];
   for (let i = 0; i < marks.length; i += 10) rows.push(marks.slice(i, i + 10).join(''));
   if (session.log.length > SHARE_MAX) rows.push(`…他${session.log.length - SHARE_MAX}問`);
   return rows;
+}
+
+/* ---------- 結果カード画像 ---------- */
+
+const CARD_MAX = 20;   // カードに載せる最大問題数
+const THUMB = 240;     // 出題部分を焼き込むサイズ
+const MARK_COLOR = { '🟩': '#58d68d', '🟨': '#e3c341', '🟥': '#ff6b81', '⬜': '#6c7490' };
+
+/** 出題されていた範囲だけを正方形に切り出す */
+function makeThumb(q) {
+  const b = cropBox(q);
+  const c = document.createElement('canvas');
+  c.width = c.height = THUMB;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#202533';
+  ctx.fillRect(0, 0, THUMB, THUMB);
+  try {
+    ctx.drawImage(q.img, b.cx - b.size / 2, b.cy - b.size / 2, b.size, b.size, 0, 0, THUMB, THUMB);
+  } catch (e) {
+    return null;
+  }
+  return c;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); return; }
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+/** 長い名前は入る大きさまで縮める */
+function fitText(ctx, text, maxW, startPx, weight) {
+  let px = startPx;
+  const font = (p) => `${weight || 700} ${p}px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif`;
+  ctx.font = font(px);
+  while (ctx.measureText(text).width > maxW && px > 11) {
+    px -= 1;
+    ctx.font = font(px);
+  }
+  return px;
+}
+
+/** 共有用の結果カードを描いて canvas を返す */
+function buildCard() {
+  const items = session.log.slice(0, CARD_MAX);
+  if (!items.length) return null;
+
+  const cols = items.length <= 3 ? items.length : items.length <= 8 ? 4 : 5;
+  const rows = Math.ceil(items.length / cols);
+  const T = 200, GAP = 18, PAD = 44, NAME_H = 38;
+  const HEAD = 152, FOOT = 58;
+
+  const gridW = cols * T + (cols - 1) * GAP;
+  const W = Math.max(880, gridW + PAD * 2);
+  const H = HEAD + rows * (T + NAME_H) + (rows - 1) * GAP + FOOT;
+
+  const cv = document.createElement('canvas');
+  cv.width = W;
+  cv.height = H;
+  const ctx = cv.getContext('2d');
+
+  // 背景
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#1e2540');
+  bg.addColorStop(0.5, '#10121a');
+  bg.addColorStop(1, '#10121a');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // ヘッダー
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#eef1f8';
+  ctx.font = '700 40px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif';
+  ctx.fillText('ウマ娘 ズームクイズ', PAD, 68);
+
+  const acc = session.total ? Math.round((session.correct / session.total) * 100) : 0;
+  ctx.fillStyle = '#98a0b8';
+  ctx.font = '400 22px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif';
+  ctx.fillText(
+    `${DIFFICULTY[settings.difficulty].name} / ${settings.pool === 'uma' ? 'ウマ娘のみ' : '全キャラ'}` +
+      `　　${session.correct}/${session.total}問正解（${acc}%）`,
+    PAD, 108
+  );
+
+  // スコア（右寄せ）
+  const scoreGrad = ctx.createLinearGradient(W - 260, 0, W - PAD, 0);
+  scoreGrad.addColorStop(0, '#4ec8c0');
+  scoreGrad.addColorStop(1, '#ee6dcb');
+  ctx.textAlign = 'right';
+  ctx.fillStyle = scoreGrad;
+  ctx.font = '800 58px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif';
+  ctx.fillText(String(session.score), W - PAD, 84);
+  ctx.fillStyle = '#98a0b8';
+  ctx.font = '400 20px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif';
+  ctx.fillText('点', W - PAD, 110);
+  ctx.textAlign = 'left';
+
+  // タイル
+  const originX = (W - gridW) / 2;
+  items.forEach((item, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const x = originX + col * (T + GAP);
+    const y = HEAD + row * (T + NAME_H + GAP);
+    const color = MARK_COLOR[item.mark] || '#6c7490';
+
+    ctx.save();
+    roundRect(ctx, x, y, T, T, 14);
+    ctx.fillStyle = '#202533';
+    ctx.fill();
+    ctx.clip();
+    if (item.thumb) ctx.drawImage(item.thumb, x, y, T, T);
+    ctx.restore();
+
+    roundRect(ctx, x + 1.5, y + 1.5, T - 3, T - 3, 13);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // 判定バッジ
+    ctx.beginPath();
+    ctx.arc(x + T - 22, y + 22, 15, 0, Math.PI * 2);
+    ctx.fillStyle = '#10121aee';
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.font = '800 19px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(item.mark === '🟥' ? '×' : item.mark === '⬜' ? '−' : '○', x + T - 22, y + 29);
+
+    // キャラ名
+    ctx.fillStyle = '#eef1f8';
+    fitText(ctx, item.name, T - 6, 20, 700);
+    ctx.fillText(item.name, x + T / 2, y + T + 27);
+    ctx.textAlign = 'left';
+  });
+
+  // フッター
+  ctx.fillStyle = '#8b93ad';
+  ctx.font = '700 20px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif';
+  ctx.fillText('#ウマ娘ズームクイズ', PAD, H - 22);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#6c7490';
+  ctx.font = '400 17px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif';
+  ctx.fillText('画像 © Cygames, Inc.', W - PAD, H - 22);
+  ctx.textAlign = 'left';
+
+  return cv;
 }
 
 function shareText() {
@@ -548,27 +704,82 @@ async function copyText(text) {
   }
 }
 
+/* ---------- 共有アクション ---------- */
+
+let cardBlob = null;
+let cardFile = null;
+let cardUrl = null;
+
+/**
+ * 結果画面を出すタイミングでカードを焼いておく。
+ * クリックハンドラ内で await を挟むとユーザー操作の有効期限が切れて
+ * クリップボード書き込みやポップアップが弾かれるため、先に用意しておく必要がある。
+ */
+async function prepareCard() {
+  ['btn-share-x', 'btn-save-image'].forEach((id) => ($(id).disabled = true));
+  if (cardUrl) URL.revokeObjectURL(cardUrl);
+  cardBlob = cardFile = cardUrl = null;
+
+  const wrap = $('card-preview');
+  const cv = buildCard();
+  const blob = cv && (await new Promise((res) => cv.toBlob(res, 'image/png')));
+  if (!blob) {
+    wrap.classList.add('hidden');
+    $('btn-share-x').disabled = false; // 画像なしでもテキスト投稿はできる
+    return;
+  }
+
+  cardBlob = blob;
+  cardFile = new File([blob], 'umazoom-result.png', { type: 'image/png' });
+  cardUrl = URL.createObjectURL(blob);
+  $('card-img').src = cardUrl;
+  wrap.classList.remove('hidden');
+  ['btn-share-x', 'btn-save-image'].forEach((id) => ($(id).disabled = false));
+}
+
+const canShareFile = () =>
+  !!(cardFile && navigator.share && navigator.canShare && navigator.canShare({ files: [cardFile] }));
+
+async function copyImage() {
+  if (!cardBlob || !window.ClipboardItem || !navigator.clipboard || !navigator.clipboard.write) return false;
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': cardBlob })]);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 $('btn-share-x').addEventListener('click', () => {
-  // 投稿画面を開くだけで、実際のポストはユーザーが確認して行う
-  const url = 'https://x.com/intent/post?text=' + encodeURIComponent(shareText());
-  window.open(url, '_blank', 'noopener,noreferrer');
+  const text = shareText();
+
+  // スマホ: 共有シートから X を選ぶと画像が添付された状態で投稿画面が開く
+  if (canShareFile()) {
+    navigator.share({ files: [cardFile], text }).catch((e) => {
+      if (e && e.name !== 'AbortError') toast('共有できませんでした');
+    });
+    return;
+  }
+
+  // PC: 画像をクリップボードに入れてから投稿画面を開く。貼り付けとポストはユーザー操作。
+  const copying = copyImage();
+  window.open('https://x.com/intent/post?text=' + encodeURIComponent(text), '_blank', 'noopener,noreferrer');
+  copying.then((ok) =>
+    toast(ok ? '画像をコピーしました。投稿欄に貼り付けてください' : '「画像を保存」から添付してください')
+  );
+});
+
+$('btn-save-image').addEventListener('click', () => {
+  if (!cardUrl) return toast('画像を用意できませんでした');
+  const a = document.createElement('a');
+  a.href = cardUrl;
+  a.download = 'umazoom-result.png';
+  a.click();
 });
 
 $('btn-copy').addEventListener('click', async () => {
   toast((await copyText(shareText())) ? '結果をコピーしました' : 'コピーできませんでした');
 });
-
-if (navigator.share) {
-  const btn = $('btn-share-native');
-  btn.classList.remove('hidden');
-  btn.addEventListener('click', async () => {
-    try {
-      await navigator.share({ title: 'ウマ娘 ズームクイズ', text: shareText() });
-    } catch (e) {
-      if (e && e.name !== 'AbortError') toast('共有できませんでした');
-    }
-  });
-}
 
 /* =========================================================
    サジェスト付き入力
