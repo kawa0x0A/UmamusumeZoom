@@ -613,11 +613,13 @@ function buildCard() {
   ctx.textAlign = 'left';
 
   // タイル
-  const originX = (W - gridW) / 2;
   items.forEach((item, i) => {
     const col = i % cols;
     const row = Math.floor(i / cols);
-    const x = originX + col * (T + GAP);
+    // 端数の行も中央に揃える
+    const inRow = Math.min(cols, items.length - row * cols);
+    const rowX = (W - (inRow * T + (inRow - 1) * GAP)) / 2;
+    const x = rowX + col * (T + GAP);
     const y = HEAD + row * (T + NAME_H + GAP);
     const color = MARK_COLOR[item.mark] || '#6c7490';
 
@@ -706,67 +708,32 @@ async function copyText(text) {
 
 /* ---------- 共有アクション ---------- */
 
-let cardBlob = null;
-let cardFile = null;
 let cardUrl = null;
 
-/**
- * 結果画面を出すタイミングでカードを焼いておく。
- * クリックハンドラ内で await を挟むとユーザー操作の有効期限が切れて
- * クリップボード書き込みやポップアップが弾かれるため、先に用意しておく必要がある。
- */
+/** 結果画面を出すタイミングでカードを焼いておく */
 async function prepareCard() {
-  ['btn-share-x', 'btn-save-image'].forEach((id) => ($(id).disabled = true));
+  $('btn-save-image').disabled = true;
   if (cardUrl) URL.revokeObjectURL(cardUrl);
-  cardBlob = cardFile = cardUrl = null;
+  cardUrl = null;
 
   const wrap = $('card-preview');
   const cv = buildCard();
   const blob = cv && (await new Promise((res) => cv.toBlob(res, 'image/png')));
   if (!blob) {
     wrap.classList.add('hidden');
-    $('btn-share-x').disabled = false; // 画像なしでもテキスト投稿はできる
     return;
   }
 
-  cardBlob = blob;
-  cardFile = new File([blob], 'umazoom-result.png', { type: 'image/png' });
   cardUrl = URL.createObjectURL(blob);
   $('card-img').src = cardUrl;
   wrap.classList.remove('hidden');
-  ['btn-share-x', 'btn-save-image'].forEach((id) => ($(id).disabled = false));
-}
-
-const canShareFile = () =>
-  !!(cardFile && navigator.share && navigator.canShare && navigator.canShare({ files: [cardFile] }));
-
-async function copyImage() {
-  if (!cardBlob || !window.ClipboardItem || !navigator.clipboard || !navigator.clipboard.write) return false;
-  try {
-    await navigator.clipboard.write([new ClipboardItem({ 'image/png': cardBlob })]);
-    return true;
-  } catch (e) {
-    return false;
-  }
+  $('btn-save-image').disabled = false;
 }
 
 $('btn-share-x').addEventListener('click', () => {
-  const text = shareText();
-
-  // スマホ: 共有シートから X を選ぶと画像が添付された状態で投稿画面が開く
-  if (canShareFile()) {
-    navigator.share({ files: [cardFile], text }).catch((e) => {
-      if (e && e.name !== 'AbortError') toast('共有できませんでした');
-    });
-    return;
-  }
-
-  // PC: 画像をクリップボードに入れてから投稿画面を開く。貼り付けとポストはユーザー操作。
-  const copying = copyImage();
-  window.open('https://x.com/intent/post?text=' + encodeURIComponent(text), '_blank', 'noopener,noreferrer');
-  copying.then((ok) =>
-    toast(ok ? '画像をコピーしました。投稿欄に貼り付けてください' : '「画像を保存」から添付してください')
-  );
+  // 投稿画面を開くだけ。画像を添えるかどうかはプレイヤーが決める。
+  const url = 'https://x.com/intent/post?text=' + encodeURIComponent(shareText());
+  window.open(url, '_blank', 'noopener,noreferrer');
 });
 
 $('btn-save-image').addEventListener('click', () => {
