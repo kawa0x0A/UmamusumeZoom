@@ -39,7 +39,11 @@ node tools/serve.mjs
 🟩🟨🟥⬜🟩
 
 #ウマ娘ズームクイズ
+https://kawa0x0a.github.io/UmamusumeZoom/
 ```
+
+公開URLは `game.js` の `SITE_URL` で定義している。X の投稿画面には `url` パラメータで
+別途渡しているため、本文の末尾にリンクとして付く。
 
 🟩 ノーヒント正解 / 🟨 ヒント・ズームアウト使用 / 🟥 不正解 / ⬜ パス
 
@@ -140,6 +144,8 @@ node tools/fetch-characters.mjs
 4. `https://<user>.github.io/<repo>/` で公開される
 
 パスはすべて相対なので、サブディレクトリ配信でもそのまま動く。
+
+公開先: https://kawa0x0a.github.io/UmamusumeZoom/
 
 ### 身内用にするための注意
 
